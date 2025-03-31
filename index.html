@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BabakMan</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #000;
+            margin: 0;
+            font-family: 'Press Start 2P', cursive;
+            color: #fff;
+            overflow: hidden; /* Prevent scrollbars from effects */
+            position: relative; /* Needed for absolute positioning of effects */
+        }
+
+        h1 {
+            color: #FFFF00;
+            margin-bottom: 15px;
+            font-size: 2.5em;
+            text-shadow: 3px 3px #FF0000;
+        }
+
+        #gameCanvas {
+            border: 5px solid #0000FF;
+            background-color: #111;
+            display: block;
+            margin: 0 auto;
+            box-shadow: 0 0 20px #0000FF;
+        }
+
+        #scoreBoard {
+            margin-top: 15px;
+            font-size: 1.5em;
+            color: #fff;
+        }
+
+        /* Message box for Game Over/Win */
+        #messageBox {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.85);
+            color: #FFFF00;
+            padding: 25px;
+            border: 4px solid #FF0000;
+            border-radius: 10px;
+            font-size: 1.3em;
+            text-align: center;
+            display: none; /* Hidden by default */
+            z-index: 30; /* High z-index */
+        }
+
+        /* Style for the special effect text */
+        #specialEffectText {
+            position: absolute;
+            top: 40%; /* Position slightly above center */
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 2em; /* Adjust size as needed */
+            color: #FFD700; /* Gold color */
+            text-shadow: 2px 2px #000;
+            opacity: 0; /* Start hidden */
+            transition: opacity 0.5s ease-out; /* Fade in/out */
+            z-index: 20; /* Above canvas, below messageBox */
+            pointer-events: none; /* Prevent interaction */
+            text-align: center;
+            white-space: nowrap; /* Prevent line breaks */
+        }
+
+        /* Rocket animation - Corrected Rotation */
+        @keyframes flyAcross {
+            0% {
+                /* Start slightly lower, tilted towards top-right */
+                transform: translate(0, 10px) rotate(-45deg);
+                opacity: 1;
+            }
+            100% {
+                /* Fly further across and up, maintain top-right tilt */
+                transform: translate(120vw, -120vh) rotate(-45deg);
+                opacity: 0;
+            }
+        }
+
+        .rocket {
+            position: absolute;
+            font-size: 2em; /* Rocket size */
+            animation: flyAcross 3s linear forwards; /* Apply animation */
+            pointer-events: none;
+            z-index: 15; /* Below special text, above canvas */
+            will-change: transform, opacity; /* Optimize animation */
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>BabakMan</h1>
+    <canvas id="gameCanvas" width="810" height="540"></canvas>
+    <div id="scoreBoard">Score: 0</div>
+    <div id="messageBox">Game Over!</div>
+    <div id="specialEffectText">Multidimensionell tillväxt!</div>
+
+    <script>
+        // --- Canvas Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreBoard = document.getElementById('scoreBoard');
+        const messageBox = document.getElementById('messageBox');
+        const specialEffectTextElement = document.getElementById('specialEffectText');
+
+        // --- Game Settings ---
+        const cellSize = 27;
+        const gridCols = canvas.width / cellSize; // 30
+        const gridRows = canvas.height / cellSize; // 20
+        const babakManSize = cellSize * 0.8;
+        const foodSize = cellSize * 0.3;
+        const ghostSize = cellSize * 0.8;
+        const moveSpeed = 3.5; // Speed of animation between cells
+        const animationSpeed = 8;
+        const mouthOpenOffset = 3;
+        const pointsPerPuck = 10;
+        const specialEffectThreshold = 100; // Trigger every 100 points
+
+        // --- Maze Definition ---
+        const maze = [
+          [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+          [1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+          [1,0,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1],
+          [1,0,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1],
+          [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+          [1,0,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1],
+          [1,0,0,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+          [1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1],
+          [1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,1,1],
+          [1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1],
+          [1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,1,1],
+          [1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1],
+          [1,0,0,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+          [1,0,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1],
+          [1,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,1],
+          [1,1,1,0,1,1,0,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0,1,1,0,1,1,1,1,1],
+          [1,0,0,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+          [1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1],
+          [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+          [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        // --- Image Loading ---
+        const images = { upper: new Image(), lower: new Image(), food: new Image(), ghost: new Image() };
+        let imagesLoaded = 0;
+        const totalImages = Object.keys(images).length;
+        const imageUrls = { /* ... */
+            upper: 'https://raw.githubusercontent.com/imanhabib/bacman/main/upper.png',
+            lower: 'https://raw.githubusercontent.com/imanhabib/bacman/main/lower.png',
+            food: 'https://raw.githubusercontent.com/imanhabib/bacman/main/puck.png',
+            ghost: 'https://raw.githubusercontent.com/imanhabib/bacman/main/ghost.png'
+        };
+        const placeholderImageUrl = (w, h, t = 'E') => `https://placehold.co/${Math.max(1,Math.round(w))}x${Math.max(1,Math.round(h))}/ff0000/ffffff?text=${t}`;
+
+        function loadImages() { /* ... (no changes) ... */
+             for (const key in images) {
+                images[key].onload = imageLoadedCallback;
+                images[key].onerror = () => {
+                    console.error(`Failed to load image: ${key}`);
+                    let size = key === 'food' ? foodSize : (key === 'ghost' ? ghostSize : babakManSize);
+                    images[key].src = placeholderImageUrl(size, size, key[0].toUpperCase());
+                    imageLoadedCallback();
+                };
+                images[key].src = imageUrls[key];
+            }
+        }
+        function imageLoadedCallback() { /* ... (no changes) ... */
+            imagesLoaded++;
+            if (imagesLoaded === totalImages) {
+                console.log("All images processed, starting game.");
+                requestAnimationFrame(() => {
+                    initGame();
+                    gameLoop();
+                });
+            }
+         }
+
+        // --- Game State ---
+        let score = 0;
+        let totalFood = 0;
+        let gameOver = false;
+        let animationFrame = 0;
+        let isMouthOpen = false;
+        let effectActive = false; // Flag to prevent effect re-triggering quickly
+
+        // --- Game Objects ---
+        const babakMan = { /* ... (no changes) ... */
+            x: 0, y: 0, dx: 0, dy: 0, currentGridX: 0, currentGridY: 0,
+            targetX: 0, targetY: 0, isMoving: false, requestedDirX: 0, requestedDirY: 0
+        };
+        const foodPellets = [];
+        const ghosts = [];
+        const numGhosts = 2;
+
+        // --- Input Handling ---
+        const keysPressed = {};
+        document.addEventListener('keydown', (e) => { /* ... (no changes) ... */
+            const key = e.key.toLowerCase();
+            keysPressed[key] = true;
+            if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(key)) {
+                e.preventDefault();
+            }
+            if (key === 'arrowleft' || key === 'a') { babakMan.requestedDirX = -1; babakMan.requestedDirY = 0; }
+            else if (key === 'arrowright' || key === 'd') { babakMan.requestedDirX = 1; babakMan.requestedDirY = 0; }
+            else if (key === 'arrowup' || key === 'w') { babakMan.requestedDirY = -1; babakMan.requestedDirX = 0; }
+            else if (key === 'arrowdown' || key === 's') { babakMan.requestedDirY = 1; babakMan.requestedDirX = 0; }
+        });
+        document.addEventListener('keyup', (e) => { /* ... (no changes) ... */
+             const key = e.key.toLowerCase();
+            keysPressed[key] = false;
+        });
+
+        // --- Helper Functions ---
+        function showMessage(text) { /* ... (no changes) ... */
+             messageBox.textContent = text;
+            messageBox.style.display = 'block';
+        }
+        function hideMessage() { /* ... (no changes) ... */
+             messageBox.style.display = 'none';
+        }
+        function checkCollision(rect1, rect2, size1, size2) { /* ... (no changes) ... */
+             return ( rect1.x < rect2.x + size2 && rect1.x + size1 > rect2.x &&
+                      rect1.y < rect2.y + size2 && rect1.y + size1 > rect2.y );
+        }
+        function isWallCollision(x, y, width, height) { /* ... (no changes) ... */
+            const startCol = Math.floor(x / cellSize);
+            const endCol = Math.floor((x + width - 0.1) / cellSize);
+            const startRow = Math.floor(y / cellSize);
+            const endRow = Math.floor((y + height - 0.1) / cellSize);
+            for (let row = startRow; row <= endRow; row++) {
+                for (let col = startCol; col <= endCol; col++) {
+                    if (row >= 0 && row < gridRows && col >= 0 && col < gridCols && maze[row][col] === 1) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+         }
+        function getCellTopLeft(gridX, gridY, objectSize) { /* ... (no changes) ... */
+             return { x: gridX * cellSize + (cellSize - objectSize) / 2,
+                      y: gridY * cellSize + (cellSize - objectSize) / 2 };
+        }
+
+        // --- Special Effect Function ---
+        function triggerSpecialEffect() { /* ... (no changes) ... */
+            if (effectActive) return;
+            effectActive = true;
+            // 1. Text
+            specialEffectTextElement.style.opacity = '1';
+            setTimeout(() => {
+                specialEffectTextElement.style.opacity = '0';
+                setTimeout(() => { effectActive = false; }, 600);
+            }, 2500);
+            // 2. Confetti
+             if (typeof confetti === 'function') {
+                confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } });
+            } else { console.warn("Confetti function not found!"); }
+            // 3. Rockets
+            const numRockets = 7;
+            for (let i = 0; i < numRockets; i++) {
+                const rocket = document.createElement('span');
+                rocket.classList.add('rocket');
+                rocket.textContent = '🚀';
+                rocket.style.bottom = '0px';
+                rocket.style.left = `${Math.random() * 100}vw`;
+                rocket.style.animationDelay = `${Math.random() * 0.5}s`;
+                document.body.appendChild(rocket);
+                rocket.addEventListener('animationend', () => { rocket.remove(); });
+            }
+        }
+
+        // --- Game Initialization ---
+        function initGame() { /* ... (no changes) ... */
+            console.log("Initializing game elements...");
+            score = 0; totalFood = 0; gameOver = false; isMouthOpen = false;
+            animationFrame = 0; effectActive = false; hideMessage();
+            specialEffectTextElement.style.opacity = '0'; updateScoreDisplay();
+            // Init BabakMan
+            babakMan.currentGridX = 1; babakMan.currentGridY = 1;
+            const startPos = getCellTopLeft(babakMan.currentGridX, babakMan.currentGridY, babakManSize);
+            babakMan.x = startPos.x; babakMan.y = startPos.y;
+            babakMan.targetX = babakMan.x; babakMan.targetY = babakMan.y;
+            babakMan.dx = 0; babakMan.dy = 0; babakMan.isMoving = false;
+            babakMan.requestedDirX = 0; babakMan.requestedDirY = 0;
+            // Place food
+            foodPellets.length = 0;
+            for (let row = 0; row < gridRows; row++) { for (let col = 0; col < gridCols; col++) {
+                if (maze[row][col] === 0) { const foodPos = getCellTopLeft(col, row, foodSize); foodPellets.push({ x: foodPos.x, y: foodPos.y }); totalFood++; } } }
+            // Place ghosts
+            ghosts.length = 0;
+            const ghostStartPositions = [ { row: 1, col: gridCols - 2 }, { row: gridRows - 2, col: 1 } ];
+            for (let i = 0; i < numGhosts; i++) {
+                const startPosGrid = ghostStartPositions[i % ghostStartPositions.length];
+                 if (maze[startPosGrid.row][startPosGrid.col] === 0) {
+                     const ghostStartPx = getCellTopLeft(startPosGrid.col, startPosGrid.row, ghostSize);
+                     ghosts.push({ x: ghostStartPx.x, y: ghostStartPx.y, dx: 0, dy: 0, speed: moveSpeed * 0.6 });
+                 } else { /* fallback */
+                     console.error("Invalid ghost start position:", startPosGrid);
+                     let placed = false; while(!placed){ let r = Math.floor(Math.random() * gridRows); let c = Math.floor(Math.random() * gridCols);
+                        if(maze[r][c] === 0){ const ghostStartPx = getCellTopLeft(c, r, ghostSize); ghosts.push({ x: ghostStartPx.x, y: ghostStartPx.y, dx: 0, dy: 0, speed: moveSpeed * 0.6 }); placed = true; } } } }
+            ghosts.forEach(ghost => chooseNewGhostDirection(ghost));
+            console.log(`Game initialized. Total food: ${totalFood}`);
+        }
+
+        // --- Ghost AI Helper ---
+        function chooseNewGhostDirection(ghost) { /* ... (no changes) ... */
+             const possibleMoves = [];
+            if (!isWallCollision(ghost.x, ghost.y - ghost.speed, ghostSize, ghostSize)) possibleMoves.push({ dx: 0, dy: -ghost.speed });
+            if (!isWallCollision(ghost.x, ghost.y + ghost.speed, ghostSize, ghostSize)) possibleMoves.push({ dx: 0, dy: ghost.speed });
+            if (!isWallCollision(ghost.x - ghost.speed, ghost.y, ghostSize, ghostSize)) possibleMoves.push({ dx: -ghost.speed, dy: 0 });
+            if (!isWallCollision(ghost.x + ghost.speed, ghost.y, ghostSize, ghostSize)) possibleMoves.push({ dx: ghost.speed, dy: 0 });
+            let nonReversingMoves = possibleMoves.filter(move => move.dx !== -ghost.dx || move.dy !== -ghost.dy);
+            if (nonReversingMoves.length > 0) { const move = nonReversingMoves[Math.floor(Math.random() * nonReversingMoves.length)]; ghost.dx = move.dx; ghost.dy = move.dy; }
+            else if (possibleMoves.length > 0) { const move = possibleMoves[0]; ghost.dx = move.dx; ghost.dy = move.dy; }
+            else { ghost.dx = 0; ghost.dy = 0; }
+        }
+
+        // --- Function to start a move for BabakMan ---
+        function startBabakManMove() { /* ... (no changes) ... */
+            if (babakMan.requestedDirX === 0 && babakMan.requestedDirY === 0) return false;
+            const nextGridX = babakMan.currentGridX + babakMan.requestedDirX; const nextGridY = babakMan.currentGridY + babakMan.requestedDirY;
+            if (nextGridX >= 0 && nextGridX < gridCols && nextGridY >= 0 && nextGridY < gridRows && maze[nextGridY][nextGridX] === 0) {
+                const targetPos = getCellTopLeft(nextGridX, nextGridY, babakManSize);
+                babakMan.targetX = targetPos.x; babakMan.targetY = targetPos.y;
+                babakMan.dx = babakMan.requestedDirX; babakMan.dy = babakMan.requestedDirY;
+                babakMan.isMoving = true; return true;
+            } else { babakMan.dx = 0; babakMan.dy = 0; return false; }
+        }
+
+        // --- Update Function ---
+        function update() { /* ... (no changes) ... */
+            if (gameOver) return;
+            // BabakMan Movement
+            if (!babakMan.isMoving) { startBabakManMove(); }
+            if (babakMan.isMoving) { let moveX = babakMan.dx * moveSpeed; let moveY = babakMan.dy * moveSpeed; let remainingX = babakMan.targetX - babakMan.x; let remainingY = babakMan.targetY - babakMan.y;
+                if (Math.abs(moveX) >= Math.abs(remainingX)) { babakMan.x = babakMan.targetX; moveX = 0; } else { babakMan.x += moveX; }
+                if (Math.abs(moveY) >= Math.abs(remainingY)) { babakMan.y = babakMan.targetY; moveY = 0; } else { babakMan.y += moveY; }
+                if (babakMan.x === babakMan.targetX && babakMan.y === babakMan.targetY) { babakMan.isMoving = false; babakMan.currentGridX += babakMan.dx; babakMan.currentGridY += babakMan.dy; babakMan.dx = 0; babakMan.dy = 0; startBabakManMove(); } }
+            // Eating Animation
+            if (babakMan.isMoving) { animationFrame++; if (animationFrame >= animationSpeed) { isMouthOpen = !isMouthOpen; animationFrame = 0; } } else { isMouthOpen = false; animationFrame = 0; }
+            // Food Collision
+            for (let i = foodPellets.length - 1; i >= 0; i--) { const food = foodPellets[i]; let babakCenterX = babakMan.x + babakManSize / 2; let babakCenterY = babakMan.y + babakManSize / 2; let foodCenterX = food.x + foodSize / 2; let foodCenterY = food.y + foodSize / 2; let dx = babakCenterX - foodCenterX; let dy = babakCenterY - foodCenterY; let distance = Math.sqrt(dx*dx + dy*dy);
+                 if (distance < (babakManSize / 2 + foodSize / 2) * 0.7) { const previousScore = score; foodPellets.splice(i, 1); score += pointsPerPuck; updateScoreDisplay();
+                    if (Math.floor(previousScore / specialEffectThreshold) < Math.floor(score / specialEffectThreshold)) { triggerSpecialEffect(); }
+                    if (foodPellets.length === 0) { showMessage("You Win! Restarting..."); gameOver = true; setTimeout(initGame, 3000); return; } break; } }
+            // Ghost Movement & Collision
+            ghosts.forEach(ghost => { let potentialX = ghost.x + ghost.dx; let potentialY = ghost.y + ghost.dy;
+                 if (isWallCollision(potentialX, potentialY, ghostSize, ghostSize) || (ghost.dx === 0 && ghost.dy === 0)) { chooseNewGhostDirection(ghost); potentialX = ghost.x + ghost.dx; potentialY = ghost.y + ghost.dy; if (isWallCollision(potentialX, potentialY, ghostSize, ghostSize)) { ghost.dx = 0; ghost.dy = 0; potentialX = ghost.x; potentialY = ghost.y; } }
+                 ghost.x = potentialX; ghost.y = potentialY;
+                if (checkCollision(babakMan, ghost, babakManSize, ghostSize)) { showMessage("Game Over! Restarting..."); gameOver = true; setTimeout(initGame, 3000); return; } });
+        }
+
+        // --- Draw Functions ---
+        function drawMaze() { /* ... (no changes) ... */
+             ctx.strokeStyle = '#0000AA'; ctx.lineWidth = 2; ctx.fillStyle = '#0000FF';
+            for (let row = 0; row < gridRows; row++) { for (let col = 0; col < gridCols; col++) { if (maze[row][col] === 1) ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize); } } }
+        function draw() { /* ... (no changes) ... */
+            ctx.clearRect(0, 0, canvas.width, canvas.height); drawMaze();
+            ctx.fillStyle = '#FFFF00'; foodPellets.forEach(food => { if (images.food.complete && images.food.naturalHeight !== 0) ctx.drawImage(images.food, food.x, food.y, foodSize, foodSize); else { ctx.beginPath(); ctx.arc(food.x + foodSize / 2, food.y + foodSize / 2, foodSize / 2, 0, Math.PI * 2); ctx.fill(); } });
+            ghosts.forEach(ghost => { if (images.ghost.complete && images.ghost.naturalHeight !== 0) ctx.drawImage(images.ghost, ghost.x, ghost.y, ghostSize, ghostSize); else { ctx.fillStyle = '#FF0000'; ctx.fillRect(ghost.x, ghost.y, ghostSize, ghostSize); } });
+            const currentOffset = isMouthOpen ? mouthOpenOffset : 0; const drawYUpper = babakMan.y - currentOffset; const drawYLower = babakMan.y + babakManSize / 2 + currentOffset;
+            if (images.upper.complete && images.upper.naturalHeight !== 0) ctx.drawImage(images.upper, babakMan.x, drawYUpper, babakManSize, babakManSize / 2); else { ctx.fillStyle = '#FFFF00'; ctx.fillRect(babakMan.x, drawYUpper, babakManSize, babakManSize / 2); }
+            if (images.lower.complete && images.lower.naturalHeight !== 0) ctx.drawImage(images.lower, babakMan.x, drawYLower, babakManSize, babakManSize / 2); else { ctx.fillStyle = '#FFFF00'; ctx.fillRect(babakMan.x, drawYLower, babakManSize, babakManSize / 2); } }
+
+        // --- Score Update ---
+        function updateScoreDisplay() { /* ... (no changes) ... */
+             scoreBoard.textContent = `Score: ${score}`;
+        }
+        // --- Game Loop ---
+        function gameLoop(timestamp) { /* ... (no changes) ... */
+            if (!gameOver) { update(); } draw(); requestAnimationFrame(gameLoop);
+        }
+
+        // --- Start Loading Images ---
+        loadImages();
+
+    </script>
+
+</body>
+</html>
